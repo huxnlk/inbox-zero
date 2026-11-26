@@ -430,6 +430,7 @@ export interface EmailProvider {
     ownerEmail: string,
     folderName: string,
   ): Promise<void>;
+  moveMessagesToFolder(messageIds: string[], folderId: string): Promise<void>;
   readonly name: "google" | "microsoft";
   removeDraftAttachment(
     draftId: string,
