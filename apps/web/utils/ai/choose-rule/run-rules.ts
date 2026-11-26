@@ -151,6 +151,7 @@ export async function runRules({
     rule: RuleWithActions;
     matchReasons?: MatchReason[];
     resolvedReason?: string;
+    isPrimary?: boolean;
     isConversationRule: boolean;
   }[] = regularMatches.map((m) => ({
     ...m,
@@ -172,6 +173,7 @@ export async function runRules({
       matchesWithFlags.push({
         rule,
         matchReasons: conversationMatch.matchReasons,
+        isPrimary: conversationMatch.isPrimary,
         resolvedReason: reason,
         isConversationRule: true,
       });
@@ -184,9 +186,10 @@ export async function runRules({
   const executableMatches = skipDraftReplies
     ? removeDraftReplyActionsFromMatches(matchesWithFlags)
     : matchesWithFlags;
+  const folderResolution = resolveFolderActions(executableMatches, logger);
   // Metadata-only matches must finish before a folder rule changes message IDs.
   const finalMatches = limitDraftEmailActions(
-    executableMatches,
+    folderResolution.matches,
     logger,
   ).toSorted(
     (a, b) =>
@@ -205,7 +208,10 @@ export async function runRules({
 
   if (!finalMatches.length) {
     const reason =
-      skippedConversationReason || results.reasoning || "No rules matched";
+      folderResolution.reason ||
+      skippedConversationReason ||
+      results.reasoning ||
+      "No rules matched";
     if (!isTest) {
       await withPrismaRetry(
         () =>
@@ -240,7 +246,12 @@ export async function runRules({
 
   for (const result of finalMatches) {
     const ruleToExecute = result.rule;
-    const reasonToUse = result.resolvedReason || results.reasoning;
+    const reasonToUse = [
+      folderResolution.reason,
+      result.resolvedReason || results.reasoning,
+    ]
+      .filter(Boolean)
+      .join("; ");
 
     if (!result.isConversationRule) {
       analyzeSenderPatternIfAiMatch({
@@ -857,9 +868,15 @@ export async function ensureConversationRuleContinuity({
   threadId: string;
   conversationRules: RuleWithActions[];
   regularRules: RuleWithActions[];
-  matches: { rule: RuleWithActions; matchReasons?: MatchReason[] }[];
+  matches: {
+    rule: RuleWithActions;
+    matchReasons?: MatchReason[];
+    isPrimary?: boolean;
+  }[];
   logger: Logger;
-}): Promise<{ rule: RuleWithActions; matchReasons?: MatchReason[] }[]> {
+}): Promise<
+  { rule: RuleWithActions; matchReasons?: MatchReason[]; isPrimary?: boolean }[]
+> {
   if (conversationRules.length === 0) {
     return matches;
   }
@@ -1038,6 +1055,55 @@ function collectMessagingChannelsFromOtherRules<
   }
 
   return actions;
+}
+
+function resolveFolderActions<
+  T extends { rule: RuleWithActions; isPrimary?: boolean },
+>(matches: T[], logger: Logger): { matches: T[]; reason?: string } {
+  const candidates = matches.flatMap((match) =>
+    match.rule.actions.flatMap((action) =>
+      action.type === ActionType.MOVE_FOLDER ? [{ match, action }] : [],
+    ),
+  );
+  if (candidates.length <= 1) return { matches };
+
+  const primaryCandidates = candidates.filter(({ match }) => match.isPrimary);
+  const first = candidates[0];
+  const sameKnownFolder =
+    Boolean(first.action.folderId?.trim()) &&
+    candidates.every(({ action }) => action.folderId === first.action.folderId);
+  let selected: (typeof candidates)[number] | undefined;
+  const primaryFolderId = primaryCandidates[0]?.action.folderId;
+  if (
+    primaryFolderId?.trim() &&
+    primaryCandidates.every(({ action }) => action.folderId === primaryFolderId)
+  )
+    selected = primaryCandidates[0];
+  else if (sameKnownFolder) selected = first;
+
+  logger.info("Resolved competing folder actions", {
+    ruleIds: candidates.map(({ match }) => match.rule.id),
+    selectedRuleId: selected?.match.rule.id,
+  });
+
+  return {
+    matches: matches
+      .map((match) => ({
+        ...match,
+        rule: {
+          ...match.rule,
+          actions: match.rule.actions.filter(
+            (action) =>
+              action.type !== ActionType.MOVE_FOLDER ||
+              (match === selected?.match && action === selected?.action),
+          ),
+        },
+      }))
+      .filter((match) => match.rule.actions.length > 0),
+    reason: selected
+      ? undefined
+      : "Conflicting folder destinations; folder moves skipped",
+  };
 }
 
 function removeDraftReplyActionsFromMatches<

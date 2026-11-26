@@ -3020,6 +3020,9 @@ describe("findMatchingRules - Integration Tests", () => {
     expect(result.reasoning).toBe(
       "Matched static conditions; AI reasoning here",
     );
+    expect(
+      result.matches.find((match) => match.rule.id === aiOnlyRule.id),
+    ).toEqual(expect.objectContaining({ isPrimary: true }));
   });
 
   it("matchesStaticRule: catches RegExp construction error and returns false", () => {
@@ -3188,7 +3191,11 @@ describe("findMatchingRules - decisionModel rule selection", () => {
     expect(aiChooseRule).not.toHaveBeenCalled();
     expect(isColdEmail).not.toHaveBeenCalled();
     expect(result.matches).toEqual([
-      { rule: aiRule, matchReasons: [{ type: ConditionType.AI }] },
+      {
+        rule: aiRule,
+        matchReasons: [{ type: ConditionType.AI }],
+        isPrimary: true,
+      },
     ]);
     expect(result.reasoning).toBe("Decision model reason");
   });
@@ -3258,7 +3265,11 @@ describe("findMatchingRules - decisionModel rule selection", () => {
       }),
     );
     expect(result.matches).toEqual([
-      { rule: aiRule, matchReasons: [{ type: ConditionType.AI }] },
+      {
+        rule: aiRule,
+        matchReasons: [{ type: ConditionType.AI }],
+        isPrimary: true,
+      },
     ]);
   });
 
@@ -3332,7 +3343,10 @@ describe("findMatchingRules - decisionModel rule selection", () => {
 
     expect(aiChooseRule).toHaveBeenCalledTimes(1);
     expect(result.matches).toEqual([
-      { rule: aiRule, matchReasons: [{ type: ConditionType.AI }] },
+      {
+        rule: aiRule,
+        matchReasons: [{ type: ConditionType.AI }],
+      },
     ]);
     expect(result.reasoning).toBe("LLM reason");
   });
@@ -3358,7 +3372,10 @@ describe("findMatchingRules - decisionModel rule selection", () => {
 
     expect(aiChooseRule).toHaveBeenCalledTimes(1);
     expect(result.matches).toEqual([
-      { rule: aiRule, matchReasons: [{ type: ConditionType.AI }] },
+      {
+        rule: aiRule,
+        matchReasons: [{ type: ConditionType.AI }],
+      },
     ]);
     expect(result.reasoning).toBe("LLM reason");
   });

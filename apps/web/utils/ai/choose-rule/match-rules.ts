@@ -75,6 +75,7 @@ type MatchingRulesResult = {
   matches: {
     rule: RuleWithActions;
     matchReasons?: MatchReason[];
+    isPrimary?: boolean;
   }[];
   reasoning: string;
   selectionMetadata: RuleSelectionMetadata;
@@ -639,9 +640,17 @@ function mergeAiResultsIntoMatches({
   selectionMetadata: RuleSelectionMetadata;
 }): MatchingRulesResult {
   const aiRules = filterMultipleSystemRules(aiResult.rules);
+  const primaryRuleIds = new Set(
+    aiResult.rules
+      .filter((match) => match.isPrimary)
+      .map(({ rule }) => rule.id),
+  );
 
   return {
-    matches: mergeMatchesWithAiResults(matches, aiRules),
+    matches: mergeMatchesWithAiResults(matches, aiRules).map((match) => ({
+      ...match,
+      ...(primaryRuleIds.has(match.rule.id) ? { isPrimary: true } : {}),
+    })),
     reasoning: combineReasoning(getMatchesReasoning(matches), aiResult.reason),
     selectionMetadata,
   };
