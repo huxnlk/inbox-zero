@@ -127,7 +127,7 @@ describe("outlook client emulator configuration", () => {
     expect(executeNext).toHaveBeenCalledWith(context);
   });
 
-  it("uses the emulator authorize URL for linking", () => {
+  it("selects a linking account without forcing renewed consent", () => {
     const url = new URL(getLinkingOAuth2Url());
 
     expect(url.origin + url.pathname).toBe(
@@ -138,11 +138,20 @@ describe("outlook client emulator configuration", () => {
     expect(url.searchParams.get("redirect_uri")).toBe(
       "http://localhost:3000/api/outlook/linking/callback",
     );
-    expect(url.searchParams.get("prompt")).toBe("consent");
+    expect(url.searchParams.get("prompt")).toBe("select_account");
     expect(url.searchParams.get("scope")).toBe(
       "openid profile email User.Read offline_access Mail.ReadWrite MailboxSettings.ReadWrite",
     );
     expect(getMicrosoftOauthAuthorizeUrl).toHaveBeenCalledWith();
+  });
+
+  it("preserves the target mailbox hint when reconnecting", () => {
+    const url = new URL(
+      getLinkingOAuth2Url({ loginHint: "mailbox@example.com" }),
+    );
+
+    expect(url.searchParams.get("login_hint")).toBe("mailbox@example.com");
+    expect(url.searchParams.get("prompt")).toBe("select_account");
   });
 
   it("saves refreshed Outlook tokens with optimistic concurrency", async () => {
