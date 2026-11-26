@@ -184,7 +184,19 @@ export async function runRules({
   const executableMatches = skipDraftReplies
     ? removeDraftReplyActionsFromMatches(matchesWithFlags)
     : matchesWithFlags;
-  const finalMatches = limitDraftEmailActions(executableMatches, logger);
+  // Metadata-only matches must finish before a folder rule changes message IDs.
+  const finalMatches = limitDraftEmailActions(
+    executableMatches,
+    logger,
+  ).toSorted(
+    (a, b) =>
+      Number(
+        a.rule.actions.some((action) => action.type === ActionType.MOVE_FOLDER),
+      ) -
+      Number(
+        b.rule.actions.some((action) => action.type === ActionType.MOVE_FOLDER),
+      ),
+  );
 
   logger.trace("Matching rule", () => ({
     module: MODULE,

@@ -583,6 +583,28 @@ const move_folder: ActionFunction<{
 
   if (!folderIdToUse) return;
 
+  const protectedLabels = env.AUTOMATION_PROTECTED_LABEL_IDS?.split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (protectedLabels?.length || env.MICROSOFT_WEBHOOK_INBOX_ONLY) {
+    // Re-read after classification: the user or another matched rule may have
+    // added a protected label while the model was deciding what to do.
+    const currentMessage = await client.getMessage(email.id);
+    if (
+      env.MICROSOFT_WEBHOOK_INBOX_ONLY &&
+      !currentMessage.labelIds?.includes("INBOX")
+    ) {
+      return { skipped: true, reason: "NOT_INBOX" };
+    }
+    if (
+      currentMessage.labelIds?.some((labelId) =>
+        protectedLabels?.includes(labelId),
+      )
+    ) {
+      return { skipped: true, reason: "PROTECTED_LABEL" };
+    }
+  }
+
   await client.moveMessagesToFolder([email.id], folderIdToUse);
 
   // lazy-update the folderId in the database for future runs

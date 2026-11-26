@@ -26,6 +26,8 @@ const { mockEnv, mockIsIntegrationActionEnabledForUserId } = vi.hoisted(() => ({
     deleteEmailActionEnabled: true,
     autoDraftDisabled: false,
     emailSendEnabled: true,
+    protectedLabelIds: undefined as string | undefined,
+    inboxOnly: false,
   },
   mockIsIntegrationActionEnabledForUserId: vi.fn().mockResolvedValue(true),
 }));
@@ -40,6 +42,12 @@ vi.mock("@/env", () => ({
     },
     get NEXT_PUBLIC_EMAIL_SEND_ENABLED() {
       return mockEnv.emailSendEnabled;
+    },
+    get AUTOMATION_PROTECTED_LABEL_IDS() {
+      return mockEnv.protectedLabelIds;
+    },
+    get MICROSOFT_WEBHOOK_INBOX_ONLY() {
+      return mockEnv.inboxOnly;
     },
   },
 }));
@@ -115,6 +123,8 @@ describe("runActionFunction", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnv.protectedLabelIds = undefined;
+    mockEnv.inboxOnly = false;
     vi.mocked(prisma.executedAction.update).mockResolvedValue({});
     vi.mocked(getMessagingRuleNotificationResult).mockResolvedValue({
       delivered: true,
@@ -149,6 +159,114 @@ describe("runActionFunction", () => {
       "destination-folder",
     );
     expect(client.moveThreadToFolder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "STARRED",
+    "protected-category-id",
+  ])("protects a message with current label %s from automatic folder moves", async (labelId) => {
+    mockEnv.protectedLabelIds = "STARRED, protected-category-id";
+    const client = createMockEmailProvider();
+    vi.mocked(client.getMessage).mockResolvedValue({
+      ...email,
+      labelIds: [labelId],
+    });
+
+    const result = await runActionFunction({
+      client,
+      email,
+      emailAccount,
+      action: {
+        id: "move-current",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "destination-folder",
+      },
+      executedRule: { id: "execution-current" } as never,
+      logger,
+    });
+
+    expect(client.getMessage).toHaveBeenCalledExactlyOnceWith(email.id);
+    expect(client.moveMessagesToFolder).not.toHaveBeenCalled();
+    expect(result).toEqual({ skipped: true, reason: "PROTECTED_LABEL" });
+  });
+
+  it("moves an unprotected message after checking its current labels", async () => {
+    mockEnv.protectedLabelIds = "STARRED, protected-category-id";
+    const client = createMockEmailProvider();
+    vi.mocked(client.getMessage).mockResolvedValue({
+      ...email,
+      labelIds: ["ordinary-category"],
+    });
+
+    await runActionFunction({
+      client,
+      email,
+      emailAccount,
+      action: {
+        id: "move-current",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "destination-folder",
+      },
+      executedRule: { id: "execution-current" } as never,
+      logger,
+    });
+
+    expect(client.moveMessagesToFolder).toHaveBeenCalledExactlyOnceWith(
+      [email.id],
+      "destination-folder",
+    );
+  });
+
+  it("fails closed when the protected-message read fails", async () => {
+    mockEnv.protectedLabelIds = "STARRED";
+    const client = createMockEmailProvider();
+    vi.mocked(client.getMessage).mockRejectedValue(new Error("read failed"));
+
+    await expect(
+      runActionFunction({
+        client,
+        email,
+        emailAccount,
+        action: {
+          id: "move-current",
+          type: ActionType.MOVE_FOLDER,
+          folderId: "destination-folder",
+        },
+        executedRule: { id: "execution-current" } as never,
+        logger,
+      }),
+    ).rejects.toThrow("read failed");
+    expect(client.moveMessagesToFolder).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [],
+    ["SENT"],
+    ["DRAFT"],
+    ["filed-folder-id"],
+  ])("leaves messages outside Inbox alone when incoming-only filing is configured (%s)", async (...labelIds) => {
+    mockEnv.inboxOnly = true;
+    const client = createMockEmailProvider();
+    vi.mocked(client.getMessage).mockResolvedValue({
+      ...email,
+      labelIds: labelIds as string[],
+    });
+
+    const result = await runActionFunction({
+      client,
+      email,
+      emailAccount,
+      action: {
+        id: "move-current",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "destination-folder",
+      },
+      executedRule: { id: "execution-current" } as never,
+      logger,
+    });
+
+    expect(client.moveMessagesToFolder).not.toHaveBeenCalled();
+    expect(result).toEqual({ skipped: true, reason: "NOT_INBOX" });
   });
 
   it("passes resolved drive attachments into draft creation", async () => {

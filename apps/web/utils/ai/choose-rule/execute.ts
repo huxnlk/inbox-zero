@@ -58,7 +58,14 @@ export async function executeAct({
 
   const actionFailures: ActionFailure[] = [];
 
-  for (const action of executedRule.actionItems) {
+  // A folder move can change the provider message ID. Finish metadata writes
+  // against the original ID before moving the message.
+  const orderedActions = executedRule.actionItems.toSorted(
+    (a, b) =>
+      Number(a.type === ActionType.MOVE_FOLDER) -
+      Number(b.type === ActionType.MOVE_FOLDER),
+  );
+  for (const action of orderedActions) {
     try {
       if (
         shouldSkipAutomatedArchiveForSender({
