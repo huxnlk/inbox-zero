@@ -411,6 +411,35 @@ describe("runRules draft attribution persistence", () => {
     vi.clearAllMocks();
   });
 
+  it("runs metadata-only rules before matching folder rules", async () => {
+    const moveRule = createRule("move-rule", null, [
+      getAction({ id: "move", type: ActionType.MOVE_FOLDER }),
+    ]);
+    const labelRule = createRule("label-rule", null, [
+      getAction({ id: "label", type: ActionType.LABEL }),
+    ]);
+    const starRule = createRule("star-rule", null, [
+      getAction({ id: "star", type: ActionType.STAR }),
+    ]);
+    mockMatchingRules([
+      { rule: moveRule, matchReasons: [] },
+      { rule: labelRule, matchReasons: [] },
+      { rule: starRule, matchReasons: [] },
+    ]);
+    prisma.executedRule.findFirst.mockResolvedValue(null);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [moveRule, labelRule, starRule],
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual([
+      "label-rule",
+      "star-rule",
+      "move-rule",
+    ]);
+  });
+
   it("persists generated draft attribution on executed draft actions", async () => {
     const draftRule = createRule("draft-rule", SystemType.TO_REPLY, [
       getAction({

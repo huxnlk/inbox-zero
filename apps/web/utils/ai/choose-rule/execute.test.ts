@@ -83,6 +83,31 @@ describe("executeAct", () => {
     mockExecutedRuleUpdate.mockResolvedValue({});
   });
 
+  it("moves after metadata actions so folder changes cannot invalidate their message IDs", async () => {
+    mockRunActionFunction.mockResolvedValue({});
+    const executedRule = {
+      ...baseExecutedRule,
+      actionItems: [
+        { id: "move", type: ActionType.MOVE_FOLDER },
+        { id: "label", type: ActionType.LABEL },
+        { id: "star", type: ActionType.STAR },
+      ],
+    } as any;
+
+    await executeAct({
+      client: mockClient,
+      executedRule,
+      message,
+      emailAccount,
+      logger,
+    });
+
+    expect(
+      mockRunActionFunction.mock.calls.map(([call]) => call.action.id),
+    ).toEqual(["label", "star", "move"]);
+    expect(executedRule.actionItems[0].id).toBe("move");
+  });
+
   it("persists provider message IDs returned by sending actions", async () => {
     mockRunActionFunction.mockResolvedValueOnce({
       sentMessageIds: ["sent-message-1"],

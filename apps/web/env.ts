@@ -230,6 +230,11 @@ const parsedEnv = createEnv({
     GOOGLE_PUBSUB_VERIFICATION_TOKEN: z.string().optional(),
 
     MICROSOFT_WEBHOOK_CLIENT_STATE: z.string().optional(),
+    MICROSOFT_WEBHOOK_CHANGE_TYPE: z
+      .enum(["created", "created,updated"])
+      .default("created,updated"),
+    MICROSOFT_WEBHOOK_INBOX_ONLY: booleanString.default(false),
+    AUTOMATION_PROTECTED_LABEL_IDS: z.string().optional(),
 
     SENTRY_AUTH_TOKEN: z.string().optional(),
     SENTRY_ORGANIZATION: z.string().optional(),
