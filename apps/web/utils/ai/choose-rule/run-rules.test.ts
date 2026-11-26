@@ -411,6 +411,309 @@ describe("runRules draft attribution persistence", () => {
     vi.clearAllMocks();
   });
 
+  it("uses the primary folder match while preserving additive metadata", async () => {
+    const generic = createRule("generic", null, [
+      getAction({
+        id: "move-a",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-a",
+      }),
+    ]);
+    const specific = createRule("specific", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-b",
+      }),
+    ]);
+    const label = createRule("label", null, [
+      getAction({ id: "tag", type: ActionType.LABEL }),
+    ]);
+    mockMatchingRules([
+      { rule: generic },
+      { rule: specific, isPrimary: true },
+      { rule: label },
+    ]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [generic, specific, label],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["label", "specific"]);
+  });
+
+  it("keeps ambiguous folder destinations in Inbox while retaining metadata", async () => {
+    const first = createRule("first", null, [
+      getAction({
+        id: "move-a",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-a",
+      }),
+    ]);
+    const second = createRule("second", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-b",
+      }),
+    ]);
+    const label = createRule("label", null, [
+      getAction({ id: "tag", type: ActionType.LABEL }),
+    ]);
+    mockMatchingRules([{ rule: first }, { rule: second }, { rule: label }]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [first, second, label],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["label"]);
+  });
+
+  it("records an unresolved folder conflict as skipped rather than executing both", async () => {
+    const first = createRule("first", null, [
+      getAction({
+        id: "move-a",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-a",
+      }),
+    ]);
+    const second = createRule("second", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-b",
+      }),
+    ]);
+    mockMatchingRules([{ rule: first }, { rule: second }]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [first, second],
+      isTest: true,
+    });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        rule: null,
+        status: ExecutedRuleStatus.SKIPPED,
+        reason: expect.stringContaining("Conflicting folder destinations"),
+      }),
+    ]);
+    expect(executeAct).not.toHaveBeenCalled();
+  });
+
+  it("collapses duplicate moves to the same known folder", async () => {
+    const first = createRule("first", null, [
+      getAction({
+        id: "move-a",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "same-folder",
+      }),
+    ]);
+    const second = createRule("second", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "same-folder",
+      }),
+    ]);
+    mockMatchingRules([{ rule: first }, { rule: second }]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [first, second],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["first"]);
+  });
+
+  it("also prevents conflicting moves within one primary rule", async () => {
+    const tag = getAction({ id: "tag", type: ActionType.LABEL });
+    const rule = createRule("mixed", null, [
+      getAction({
+        id: "move-a",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-a",
+      }),
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "folder-b",
+      }),
+      tag,
+    ]);
+    mockMatchingRules([{ rule, isPrimary: true }]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    await runRulesWithDefaults({ rules: [rule], isTest: true });
+
+    expect(getActionItemsWithAiArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedRule: expect.objectContaining({ actions: [tag] }),
+      }),
+    );
+  });
+
+  it.each([
+    { folderId: null, isPrimary: false },
+    { folderId: "", isPrimary: false },
+    { folderId: " ", isPrimary: false },
+    { folderId: "folder-a", isPrimary: true },
+  ])("does not guess between unresolved destinations: %j", async ({
+    folderId,
+    isPrimary,
+  }) => {
+    const first = createRule("first", null, [
+      getAction({ id: "move-a", type: ActionType.MOVE_FOLDER, folderId }),
+    ]);
+    const second = createRule("second", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: isPrimary ? "folder-b" : folderId,
+      }),
+    ]);
+    mockMatchingRules([
+      { rule: first, isPrimary },
+      { rule: second, isPrimary },
+    ]);
+
+    const result = await runRulesWithDefaults({
+      rules: [first, second],
+      isTest: true,
+    });
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        rule: null,
+        status: ExecutedRuleStatus.SKIPPED,
+        reason: expect.stringContaining("Conflicting folder destinations"),
+      }),
+    ]);
+    expect(getActionItemsWithAiArgs).not.toHaveBeenCalled();
+    expect(executeAct).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    null,
+    "",
+    " ",
+  ])("suppresses an unknown primary destination %j when another folder competes", async (folderId) => {
+    const primary = createRule("primary", null, [
+      getAction({ id: "move-a", type: ActionType.MOVE_FOLDER, folderId }),
+    ]);
+    const secondary = createRule("secondary", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "known-folder",
+      }),
+    ]);
+    const label = createRule("label", null, [
+      getAction({ id: "tag", type: ActionType.LABEL }),
+    ]);
+    mockMatchingRules([
+      { rule: primary, isPrimary: true },
+      { rule: secondary },
+      { rule: label },
+    ]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [primary, secondary, label],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["label"]);
+    expect(result[0].reason).toContain("Conflicting folder destinations");
+  });
+
+  it("collapses identical primary destinations before resolving competing folders", async () => {
+    const primary = createRule("primary", null, [
+      getAction({
+        id: "move-a1",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "primary-folder",
+      }),
+      getAction({
+        id: "move-a2",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "primary-folder",
+      }),
+    ]);
+    const secondary = createRule("secondary", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "secondary-folder",
+      }),
+    ]);
+    mockMatchingRules([
+      { rule: primary, isPrimary: true },
+      { rule: secondary },
+    ]);
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [primary, secondary],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["primary"]);
+    expect(getActionItemsWithAiArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedRule: expect.objectContaining({
+          actions: [primary.actions[0]],
+        }),
+      }),
+    );
+  });
+
+  it("retains primary precedence when a conversation meta-rule resolves to a folder rule", async () => {
+    const conversation = createRule("fyi", SystemType.FYI, [
+      getAction({
+        id: "move-fyi",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "fyi-folder",
+      }),
+    ]);
+    const secondary = createRule("secondary", null, [
+      getAction({
+        id: "move-b",
+        type: ActionType.MOVE_FOLDER,
+        folderId: "secondary-folder",
+      }),
+    ]);
+    mockMatchingRules([
+      { rule: conversationMetaRule, isPrimary: true },
+      { rule: secondary },
+    ]);
+    vi.mocked(determineConversationStatus).mockResolvedValue({
+      rule: conversation,
+      reason: "For awareness",
+    });
+    vi.mocked(getActionItemsWithAiArgs).mockResolvedValue([]);
+
+    const result = await runRulesWithDefaults({
+      rules: [conversation, secondary],
+      isTest: true,
+    });
+
+    expect(result.map((item) => item.rule?.id)).toEqual(["fyi"]);
+    expect(getActionItemsWithAiArgs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selectedRule: expect.objectContaining({
+          actions: conversation.actions,
+        }),
+      }),
+    );
+  });
+
   it("runs metadata-only rules before matching folder rules", async () => {
     const moveRule = createRule("move-rule", null, [
       getAction({ id: "move", type: ActionType.MOVE_FOLDER }),
@@ -1741,6 +2044,7 @@ function mockMatchingRules(
   matches: {
     rule: RuleWithActions;
     matchReasons?: { type: ConditionType }[];
+    isPrimary?: boolean;
   }[],
   reasoning = "Matched draft rule",
 ) {
