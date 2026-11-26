@@ -811,6 +811,20 @@ describe("OutlookProvider.getLatestMessageInThread", () => {
 });
 
 describe("OutlookProvider snapshot mutations", () => {
+  it("moves only captured messages to a custom folder without expanding their conversations", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    const api = vi.fn(() => ({ post }));
+    const provider = new OutlookProvider(
+      { getClient: () => ({ api }) } as never,
+      createTestLogger(),
+    );
+
+    await provider.moveMessagesToFolder(["new-message", "new-message"], "fyi-folder");
+
+    expect(api).toHaveBeenCalledExactlyOnceWith("/me/messages/new-message/move");
+    expect(post).toHaveBeenCalledExactlyOnceWith({ destinationId: "fyi-folder" });
+  });
+
   it.each([
     ["archiveMessages", "archive"],
     ["trashMessages", "deleteditems"],

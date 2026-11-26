@@ -2599,19 +2599,19 @@ export class OutlookProvider implements EmailProvider {
     messageIds: string[],
     _labelId?: string,
   ): Promise<void> {
-    await this.moveMessageSnapshots(messageIds, "archive");
+    await this.moveMessagesToFolder(messageIds, "archive");
   }
 
   async unarchiveMessages(messageIds: string[]): Promise<void> {
-    await this.moveMessageSnapshots(messageIds, "inbox");
+    await this.moveMessagesToFolder(messageIds, "inbox");
   }
 
   async trashMessages(messageIds: string[]): Promise<void> {
-    await this.moveMessageSnapshots(messageIds, "deleteditems");
+    await this.moveMessagesToFolder(messageIds, "deleteditems");
   }
 
   async untrashMessages(messageIds: string[]): Promise<void> {
-    await this.moveMessageSnapshots(messageIds, "inbox");
+    await this.moveMessagesToFolder(messageIds, "inbox");
   }
 
   async markMessagesStarredState(
@@ -2653,9 +2653,9 @@ export class OutlookProvider implements EmailProvider {
     });
   }
 
-  private async moveMessageSnapshots(
+  async moveMessagesToFolder(
     messageIds: string[],
-    destinationId: "archive" | "deleteditems" | "inbox",
+    destinationId: string,
   ) {
     await mapWithConcurrency([...new Set(messageIds)], 4, async (messageId) => {
       try {
