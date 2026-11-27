@@ -299,6 +299,13 @@ describe("MCP tool permissions and rule writes", () => {
     ["search_inbox", { query: "x" }],
     ["read_thread", { threadId: "t1" }],
     ["create_draft", { to: "a@example.com", subject: "s", body: "b" }],
+    ["list_rules", {}],
+    ["get_rule", { id: "rule_1" }],
+    ["create_rule", { name: "r" }],
+    ["update_rule", { id: "rule_1" }],
+    ["delete_rule", { id: "rule_1" }],
+    ["get_stats_by_period", {}],
+    ["get_response_time_stats", {}],
   ])("%s fails before any provider call when the account is missing, foreign or unknown", async (name, args) => {
     vi.mocked(resolveMcpEmailAccount).mockRejectedValue(
       new Error("An explicit account is required"),
@@ -312,6 +319,9 @@ describe("MCP tool permissions and rule writes", () => {
       expect.objectContaining({ userId: "user_1", emailAccountId: "foreign" }),
     );
     expect(createEmailProvider).not.toHaveBeenCalled();
+    expect(createRule).not.toHaveBeenCalled();
+    expect(updateRule).not.toHaveBeenCalled();
+    expect(deleteRule).not.toHaveBeenCalled();
   });
 
   it("passes the explicit account id and the session user to the resolver", async () => {

@@ -90,6 +90,11 @@ describe("account-selection", () => {
       name: null,
       provider: "microsoft",
     });
+    expect(prisma.emailAccount.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { email: "selected@example.com", userId: "user_1" },
+      }),
+    );
   });
 
   it("rejects ambiguous selectors", async () => {
