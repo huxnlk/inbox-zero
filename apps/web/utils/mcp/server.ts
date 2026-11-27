@@ -82,7 +82,7 @@ export async function handleMcpServerRequest(
     { name: `${BRAND_NAME} MCP`, version: "1.0.0" },
     {
       instructions:
-        "Use list_email_accounts when targeting a specific inbox. Search and read tools return mail; create_draft saves a mailbox draft and never sends. Rule and stats tools accept emailAccountId or emailAddress and default to the first linked account.",
+        "Use list_email_accounts when targeting a specific inbox. Search and read tools return mail; create_draft saves a mailbox draft and never sends. Rule and stats tools require an explicit emailAccountId (or emailAddress) from list_email_accounts; there is no default account, and an unknown or not-owned account is rejected.",
     },
   );
 
