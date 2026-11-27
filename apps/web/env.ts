@@ -53,6 +53,10 @@ const parsedEnv = createEnv({
   server: {
     NODE_ENV: z.enum(["development", "production", "test"]),
     INBOX_ZERO_ENV_FILE: z.string().optional(),
+    // Mail-content AI policy. Unset: no extra restriction. "none": no account
+    // may have mail bodies read for AI analysis. Otherwise a comma list of
+    // emailAccount ids that may.
+    MAIL_CONTENT_AI_ALLOWED_ACCOUNTS: z.string().optional(),
     DATABASE_URL: z.string().url(),
     DATABASE_URL_UNPOOLED: z.string().url().optional(),
     PREVIEW_DATABASE_URL: z.string().url().optional(),
