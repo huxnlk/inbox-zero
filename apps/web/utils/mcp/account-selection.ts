@@ -45,25 +45,23 @@ export async function resolveMcpEmailAccount({
     throw new Error("Provide either emailAccountId or emailAddress, not both.");
   }
 
+  if (!emailAccountId && !emailAddress) {
+    throw new Error(
+      "An explicit account is required: pass emailAccountId (or emailAddress). Call list_email_accounts to find it.",
+    );
+  }
+
   const where = emailAccountId
     ? { id: emailAccountId, userId }
-    : emailAddress
-      ? { email: emailAddress, userId }
-      : { userId };
+    : { email: emailAddress, userId };
 
   const account = await prisma.emailAccount.findFirst({
     where,
     select: mcpEmailAccountSelect,
-    ...(!emailAccountId &&
-      !emailAddress && { orderBy: EMAIL_ACCOUNT_ORDER_BY }),
   });
 
   if (!account) {
-    throw new Error(
-      emailAccountId || emailAddress
-        ? "Email account not found for the authenticated user."
-        : "No email accounts are linked to the authenticated user.",
-    );
+    throw new Error("Email account not found for the authenticated user.");
   }
 
   return toMcpEmailAccount(account);

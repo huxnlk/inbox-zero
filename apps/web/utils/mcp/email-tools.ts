@@ -11,7 +11,12 @@ const READ_THREAD_MAX_MESSAGES = 20;
 const READ_MESSAGE_MAX_LENGTH = 4000;
 
 export const mcpAccountSelectorShape = {
-  emailAccountId: z.string().optional(),
+  emailAccountId: z
+    .string()
+    .optional()
+    .describe(
+      "Required unless emailAddress is given. Use list_email_accounts.",
+    ),
   emailAddress: z.string().email().optional(),
 };
 

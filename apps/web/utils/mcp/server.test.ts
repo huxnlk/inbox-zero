@@ -91,6 +91,7 @@ import { resolveMcpEmailAccount } from "@/utils/mcp/account-selection";
 import prisma from "@/utils/__mocks__/prisma";
 import { handleMcpServerRequest } from "@/utils/mcp/server";
 import { isMcpServerEnabledForUser } from "@/utils/mcp/access";
+import { createEmailProvider } from "@/utils/email/provider";
 import { getMailClientResourceUri } from "@/utils/mcp/mail-client-bundle";
 
 describe("mcp-server", () => {
@@ -292,6 +293,57 @@ describe("MCP tool permissions and rule writes", () => {
     );
     expect(updateRule).not.toHaveBeenCalled();
     expect(deleteRule).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["search_inbox", { query: "x" }],
+    ["read_thread", { threadId: "t1" }],
+    ["create_draft", { to: "a@example.com", subject: "s", body: "b" }],
+    ["list_rules", {}],
+    ["get_rule", { id: "rule_1" }],
+    ["create_rule", { name: "r" }],
+    ["update_rule", { id: "rule_1" }],
+    ["delete_rule", { id: "rule_1" }],
+    ["get_stats_by_period", {}],
+    ["get_response_time_stats", {}],
+  ])("%s fails before any provider call when the account is missing, foreign or unknown", async (name, args) => {
+    vi.mocked(resolveMcpEmailAccount).mockRejectedValue(
+      new Error("An explicit account is required"),
+    );
+    const tool = await getTool(name, ["mcp:read", "mcp:write"]);
+    await expect(tool(args)).rejects.toThrow("explicit account");
+    await expect(
+      tool({ ...args, emailAccountId: "foreign" }),
+    ).rejects.toThrow();
+    expect(resolveMcpEmailAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: "user_1", emailAccountId: "foreign" }),
+    );
+    expect(createEmailProvider).not.toHaveBeenCalled();
+    expect(createRule).not.toHaveBeenCalled();
+    expect(updateRule).not.toHaveBeenCalled();
+    expect(deleteRule).not.toHaveBeenCalled();
+  });
+
+  it("passes the explicit account id and the session user to the resolver", async () => {
+    vi.mocked(createEmailProvider).mockRejectedValueOnce(new Error("stop"));
+    const tool = await getTool("search_inbox", ["mcp:read"]);
+    await expect(
+      tool({ query: "x", emailAccountId: "account_1" }),
+    ).rejects.toThrow("stop");
+    expect(resolveMcpEmailAccount).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user_1",
+        emailAccountId: "account_1",
+      }),
+    );
+  });
+
+  it("still enforces mcp:read before resolving an account", async () => {
+    const tool = await getTool("search_inbox", ["mcp:write"]);
+    await expect(
+      tool({ query: "x", emailAccountId: "account_1" }),
+    ).rejects.toThrow("Missing required permission");
+    expect(resolveMcpEmailAccount).not.toHaveBeenCalled();
   });
 });
 

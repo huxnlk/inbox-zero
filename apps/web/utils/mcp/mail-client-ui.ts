@@ -61,10 +61,8 @@ export function registerMailClient(
       inputSchema: {
         emailAccountId: z
           .string()
-          .optional()
-          .describe(
-            "Linked mailbox ID from list_email_accounts; defaults to the first linked mailbox.",
-          ),
+          .min(1)
+          .describe("Linked mailbox ID from list_email_accounts. Required."),
         threadId: z
           .string()
           .optional()
@@ -85,11 +83,10 @@ export function registerMailClient(
     },
     async (args) => {
       assertScope(session.scopes, "mcp:read");
-      if (args.emailAccountId)
-        await resolveMcpEmailAccount({
-          userId: session.userId,
-          emailAccountId: args.emailAccountId,
-        });
+      await resolveMcpEmailAccount({
+        userId: session.userId,
+        emailAccountId: args.emailAccountId,
+      });
       return result(args, session.scopes);
     },
   );
