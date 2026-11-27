@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   analyzeStyle: vi.fn(),
   analyze: vi.fn(),
   getAccount: vi.fn(),
+  validateAccess: vi.fn(),
   locks: new Map<string, { value: string; expires: number }>(),
 }));
 
@@ -29,6 +30,9 @@ vi.mock("@/utils/email/provider", () => ({
 }));
 vi.mock("@/utils/ai/knowledge/writing-style", () => ({
   aiAnalyzeWritingStyle: mocks.analyzeStyle,
+}));
+vi.mock("@/utils/user/validate", () => ({
+  validateUserAndAiAccess: mocks.validateAccess,
 }));
 vi.mock("@/utils/user/get", () => ({
   getEmailAccountWithAiAndTokens: mocks.getAccount,
@@ -103,6 +107,7 @@ describe("background persona scheduling", () => {
     });
     prisma.emailAccount.update.mockResolvedValue({ id: "account-1" } as never);
     mocks.getAccount.mockResolvedValue({ id: "account-1", user: {} });
+    mocks.validateAccess.mockResolvedValue({ emailAccount: { id: "account-1" } });
     mocks.getMessages.mockResolvedValue({ messages: [] });
     mocks.getSentMessages.mockResolvedValue([]);
     mocks.createProvider.mockResolvedValue({

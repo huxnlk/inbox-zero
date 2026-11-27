@@ -11,14 +11,33 @@ import { createEmailProvider } from "@/utils/email/provider";
 import { SafeError } from "@/utils/error";
 import { scheduleAccountAnalysis } from "@/utils/ai/knowledge/schedule-account-analysis";
 import { whitelistInboxZero } from "@/utils/whitelist-inbox-zero";
+import { validateUserAndAiAccess } from "@/utils/user/validate";
+import { isMailContentAiAllowed } from "@/utils/mail-content-ai-policy";
 
 const SENT_MESSAGE_SAMPLE_POOL_SIZE = 60;
 const STYLE_SAMPLE_SIZE = 20;
+
+// Policy/entitlement gate. Must run before any provider read or AI call.
+// Layout mounts the assessment for every owner session, so a denied account
+// is a quiet skip, not an error. Other failures (e.g. account not found) throw.
+async function hasAnalysisAccess(emailAccountId: string) {
+  if (!isMailContentAiAllowed(emailAccountId)) return false;
+  try {
+    await validateUserAndAiAccess({ emailAccountId });
+    return true;
+  } catch (error) {
+    if (error instanceof SafeError && error.statusCode === 403) return false;
+    throw error;
+  }
+}
 
 // to help with onboarding and provide the best flow to new users
 export const assessAction = actionClient
   .metadata({ name: "assessUser" })
   .action(async ({ ctx: { emailAccountId, userId, provider, logger } }) => {
+    if (!(await hasAnalysisAccess(emailAccountId)))
+      return { success: true, skipped: true };
+
     const emailAccount = await prisma.emailAccount.findUnique({
       where: { id: emailAccountId },
       select: { behaviorProfile: true },
@@ -51,6 +70,9 @@ export const assessAction = actionClient
 export const analyzeWritingStyleAction = actionClient
   .metadata({ name: "analyzeWritingStyle" })
   .action(async ({ ctx: { emailAccountId, provider, logger } }) => {
+    if (!(await hasAnalysisAccess(emailAccountId)))
+      return { success: true, skipped: true };
+
     const emailAccount = await prisma.emailAccount.findUnique({
       where: { id: emailAccountId },
       select: {
